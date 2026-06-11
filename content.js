@@ -54,99 +54,92 @@
       try {
         // Extract the link for the current listing
         const linkElement = listing.querySelector('a.sc-iGgWBj.hCbfch.listing-name.selling-listing');
-        const listingUrl = linkElement ? 'https://traderie.com' + linkElement.getAttribute('href') : null;
+        if (!linkElement) return;
 
-        // --- Extract bulk quantity prefix safely ---
+        const rawTitle = linkElement.textContent.trim();
+
+        // Exclude Stock Listings entirely
+        if (/Stock\s*Listing/i.test(rawTitle)) return;
+
+        const listingUrl = 'https://traderie.com' + linkElement.getAttribute('href');
+
+        // Extract bulk quantity prefix safely without garbage text
         let soldItemPrefix = "";
-        if (linkElement) {
-          const rawTitle = linkElement.textContent.trim();
-          // Checks if the listing title begins with a quantity (e.g., "15 X Madawc's Ire")
-          const qtyMatch = rawTitle.match(/^(\d+)\s*X\s+(.+)/i);
-          if (qtyMatch) {
-            const qty = parseInt(qtyMatch[1], 10);
-            if (qty > 1) {
-              let cleanName = qtyMatch[2];
-              // Strip out Traderie's extra injected listing garbage text and game mod tags
-              cleanName = cleanName.replace(/(?:Standing|Stock)\s*Listing.*/i, '');
-              cleanName = cleanName.replace(/reign of the warlock.*/i, '');
-              cleanName = cleanName.replace(/diablo 2 resurrected.*/i, '');
-              cleanName = cleanName.replace(/•.*/, '');
-              cleanName = cleanName.trim();
-              
-              soldItemPrefix = `${qty} X ${cleanName} : `;
+        const qtyMatch = rawTitle.match(/^(\d+)\s*X\s+(.+)/i);
+        if (qtyMatch) {
+          const qty = parseInt(qtyMatch[1], 10);
+          if (qty > 1) {
+            let cleanName = qtyMatch[2];
+            cleanName = cleanName.replace(/Standing\s*Listing.*/i, '');
+            cleanName = cleanName.replace(/reign of the warlock.*/i, '');
+            cleanName = cleanName.replace(/diablo 2 resurrected.*/i, '');
+            cleanName = cleanName.replace(/•.*/, '');
+            cleanName = cleanName.trim();
+            soldItemPrefix = `${qty} X ${cleanName} : `;
+          }
+        }
+
+        // Verify there is an actual price attached to the listing before processing
+        const priceLines = Array.from(listing.querySelectorAll('.price-line'));
+        if (priceLines.length === 0) return;
+
+        let tokens = [];
+
+        // RESTORED: Scan the entire listing sequentially to preserve text boundaries 
+        // accurately recognizing "OR" text nodes vs adjacent package runes.
+        function walkDOM(node) {
+          if (!node) return;
+          for (let i = 0; i < node.childNodes.length; i++) {
+            let child = node.childNodes[i];
+            
+            // CRITICAL FIX: Skip the item title element entirely so it's not mixed into the price!
+            if (child === linkElement) continue;
+            if (child.nodeType === 1 && child.classList && child.classList.contains('listing-name')) continue;
+            
+            if (child.nodeType === 3) { // Text Node
+              if (/\bOR\b/i.test(child.textContent)) {
+                // Prevent duplicate consecutive ORs
+                if (tokens.length > 0 && tokens[tokens.length - 1] !== "OR") {
+                  tokens.push("OR");
+                }
+              }
+            } else if (child.nodeType === 1) { // Element Node
+              if (child.tagName === 'A') {
+                const textContent = child.textContent.trim();
+                const match = textContent.match(itemRegex);
+                if (match) {
+                  const quantity = match[1];
+                  const cleanName = normalizeItemName(match[2]);
+                  const isRune = /^(Zod|Cham|Jah|Ber|Sur|Lo|Ohm|Vex|Gul|Ist|Mal|Um|Pul|Lem|Fal|Ko|Lum|Io|Hel|Dol|Shael|Sol|Amn|Thul|Ort|Ral|Tal|Ith|Eth|Nef|Tir|Eld|El)$/i.test(match[2]);
+                  tokens.push(`${quantity} X ${cleanName}${isRune ? ' Rune' : ''}`);
+                } else {
+                  walkDOM(child);
+                }
+              } else {
+                walkDOM(child);
+              }
             }
           }
         }
 
-        // Make sure the listing actually has a price attached
-        const priceLines = Array.from(listing.querySelectorAll('.price-line'));
-        if (priceLines.length === 0) return;
-
-        let items = [];
-
-        // Scan purely inside the price boxes
-        priceLines.forEach((priceLine, index) => {
-          // If Traderie uses multiple separate price-lines, treat the gap between them as an OR alternative
-          if (index > 0 && items.length > 0 && items[items.length - 1] !== "OR") {
-            items.push("OR");
-          }
-
-          function walkDOM(node) {
-            if (!node) return;
-            for (let i = 0; i < node.childNodes.length; i++) {
-              let child = node.childNodes[i];
-              
-              if (child.nodeType === 3) { // It's a raw Text Node
-                // Only split into a new option if we hit an explicit "OR" text separator inside the box
-                if (/\bOR\b/i.test(child.textContent)) {
-                  items.push("OR");
-                }
-              } else if (child.nodeType === 1) { // It's an HTML Element
-                // If it's a link, check if it contains a valid currency pattern
-                if (child.tagName === 'A') {
-                  const textContent = child.textContent.trim();
-                  const match = textContent.match(itemRegex);
-                  
-                  if (match) {
-                    // Pull ONLY the quantity and item name, ignoring junk text
-                    const quantity = match[1];
-                    const cleanName = normalizeItemName(match[2]);
-                    
-                    // Check if the item is a rune so we can cleanly append the word "Rune" to the string
-                    const isRune = /^(Zod|Cham|Jah|Ber|Sur|Lo|Ohm|Vex|Gul|Ist|Mal|Um|Pul|Lem|Fal|Ko|Lum|Io|Hel|Dol|Shael|Sol|Amn|Thul|Ort|Ral|Tal|Ith|Eth|Nef|Tir|Eld|El)$/i.test(match[2]);
-                    
-                    items.push(`${quantity} X ${cleanName}${isRune ? ' Rune' : ''}`);
-                  } else {
-                    walkDOM(child);
-                  }
-                } else {
-                  // Otherwise, keep searching deeper inside this element
-                  walkDOM(child);
-                }
-              }
-            }
-          }
-
-          // STRICTLY execute walker on the priceLine, bypassing the main item title
-          walkDOM(priceLine); 
-        });
+        // Walk the entire listing structure to maintain flawless visual order
+        walkDOM(listing);
 
         let priceOptions = [];
         let currentGroup = [];
 
-        // Process the scanned items into their proper bundled groups
-        items.forEach(item => {
-          if (item === "OR") {
+        // Group the parsed tokens into package arrays split perfectly by the OR boundaries
+        tokens.forEach(token => {
+          if (token === "OR") {
             if (currentGroup.length > 0) {
               priceOptions.push(currentGroup);
-              currentGroup = []; // Start a new alternative path
+              currentGroup = [];
             }
           } else {
-            currentGroup.push(item); // Bundle adjacent currency tokens together
+            currentGroup.push(token); // Combine adjacent currencies into one deal
           }
         });
         
-        // Push the final group if it contains anything
         if (currentGroup.length > 0) {
           priceOptions.push(currentGroup);
         }
@@ -156,16 +149,15 @@
         const structuredPriceOptions = [];
         const uniqueItemsInListing = new Set();
 
-        // Calculate values for each bundled package block
+        // Evaluate sums for each separate option bundle
         priceOptions.forEach(groupArr => {
           let groupSumValue = 0;
           
           groupArr.forEach(priceStr => {
             groupSumValue += parsePrice(priceStr);
-            
+
             const match = priceStr.match(itemRegex);
             const itemMatch = match && match[2];
-            
             if (itemMatch) {
               const normalizedItem = normalizeItemName(itemMatch);
               if (itemValues[normalizedItem]) {
@@ -176,7 +168,7 @@
 
           if (groupArr.length > 0) {
             structuredPriceOptions.push({
-              displayStr: groupArr.join(' + '), // Packages are cleanly joined with a '+'
+              displayStr: groupArr.join(' + '), // Preserves package formatting perfectly
               value: groupSumValue
             });
           }
@@ -186,12 +178,10 @@
 
         // Rank the listing based on its cheapest available option
         const lowestOptionPrice = Math.min(...structuredPriceOptions.map(o => o.value));
-        const fullDisplayPriceString = structuredPriceOptions.map(o => o.displayStr).join(' OR ');
-        
-        // Construct the final string by appending the bulk item prefix if it exists
+        const fullDisplayPriceString = structuredPriceOptions.map(o => o.displayStr).join(' OR '); 
         const finalDisplayPriceString = soldItemPrefix + fullDisplayPriceString;
 
-        // Push data to all active category filters found inside the price row
+        // Push data into all active category filters found inside the listing row
         uniqueItemsInListing.forEach(item => {
           if (!itemCounts[item]) itemCounts[item] = [];
           itemCounts[item].push({ 
@@ -269,7 +259,7 @@
     return 0;
   }
 
-  // Create the container to display the sorted listings
+  // Create the container sidebar window panel box to display results
   function createListingContainer() {
     const oldContainer = document.querySelector('.d2r-sorted-listings-panel');
     if (oldContainer) oldContainer.remove();
@@ -287,7 +277,7 @@
     container.style.padding = '10px';
     container.style.zIndex = 100000; 
     container.style.width = '340px'; 
-    container.style.display = 'flex'; // Locked strictly into flex column stack
+    container.style.display = 'flex'; 
     container.style.flexDirection = 'column';
     container.style.flexWrap = 'nowrap';
     container.style.overflowY = 'auto';
