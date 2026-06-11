@@ -2,21 +2,53 @@
   // Select the divs containing price and listing data
   const listingSelector = '.listing-product-info';
 
-  // Define every single rune in Diablo 2 with hierarchical weight values
-  const runeValues = {
+  // Define all currencies with hierarchical weight values for the menu sorting order
+  const itemValues = {
+    // Custom Currencies (Lowest Priority)
+    'Random Gems': 0.01,
+    'Perfect Amethyst': 0.02,
+    'Key Of Terror': 0.03,
+    'Key Of Hate': 0.04,
+    'Key Of Destruction': 0.05,
+    'Random Minor Key': 0.06,
+    'Talic\'s Anguish': 0.07,
+    'Korlic\'s Pain': 0.08,
+    'Madawc\'s Ire': 0.09,
+    'Bul-Kathos\' Nightmare': 0.10,
+    'Worusk\'s End': 0.11,
+    // Runes
     El: 1, Eld: 2, Tir: 3, Nef: 4, Eth: 5, Ith: 6, Tal: 7, Ral: 8, Ort: 9, Thul: 10,
     Amn: 11, Sol: 12, Shael: 13, Dol: 14, Hel: 15, Io: 16, Lum: 17, Ko: 18, Fal: 19,
     Lem: 20, Pul: 21, Um: 22, Mal: 23, Ist: 24, Gul: 25, Vex: 26, Ohm: 27, Lo: 28,
     Sur: 29, Ber: 30, Jah: 31, Cham: 32, Zod: 33
   };
 
-  // Master regular expression pattern matching all 33 runes case-insensitively
-  const runeRegex = /(\d+)\s*X\s*(Zod|Cham|Jah|Ber|Sur|Lo|Ohm|Vex|Gul|Ist|Mal|Um|Pul|Lem|Fal|Ko|Lum|Io|Hel|Dol|Shael|Sol|Amn|Thul|Ort|Ral|Tal|Ith|Eth|Nef|Tir|Eld|El)\s*Rune/i;
+  // Master regular expression pattern matching all runes, keys, and gems case-insensitively
+  const itemRegex = /(\d+)\s*X\s*(Zod|Cham|Jah|Ber|Sur|Lo|Ohm|Vex|Gul|Ist|Mal|Um|Pul|Lem|Fal|Ko|Lum|Io|Hel|Dol|Shael|Sol|Amn|Thul|Ort|Ral|Tal|Ith|Eth|Nef|Tir|Eld|El|Worusk\'s\s*End|Bul-Kathos\'\s*Nightmare|Madawc\'s\s*Ire|Korlic\'s\s*Pain|Talic\'s\s*Anguish|Random\s*Minor\s*Keys?|Key\s*Of\s*Destructions?|Key\s*Of\s*Hates?|Key\s*Of\s*Terrors?|Perfect\s*Amethysts?|Random\s*Gems?)(?:\s*Rune)?/i;
+
+  // Smart string normalizer to map HTML text perfectly to our dictionary keys
+  function normalizeItemName(rawName) {
+    const lower = rawName.toLowerCase().replace(/\s+/g, ' ');
+    if (lower.includes('random gem')) return 'Random Gems';
+    if (lower.includes('perfect amethyst')) return 'Perfect Amethyst';
+    if (lower.includes('key of terror')) return 'Key Of Terror';
+    if (lower.includes('key of hate')) return 'Key Of Hate';
+    if (lower.includes('key of destruction')) return 'Key Of Destruction';
+    if (lower.includes('random minor key')) return 'Random Minor Key';
+    if (lower.includes('talic')) return "Talic's Anguish";
+    if (lower.includes('korlic')) return "Korlic's Pain";
+    if (lower.includes('madawc')) return "Madawc's Ire";
+    if (lower.includes('bul-kathos')) return "Bul-Kathos' Nightmare";
+    if (lower.includes('worusk')) return "Worusk's End";
+    
+    // Fallback normalization for standard runes
+    return lower.charAt(0).toUpperCase() + lower.slice(1);
+  }
 
   // Create a function to get the sorted listings
   function getSortedListings() {
     const listings = Array.from(document.querySelectorAll(listingSelector));
-    const runeCounts = {};
+    const itemCounts = {};
 
     listings.forEach(listing => {
       try {
@@ -24,36 +56,80 @@
         const linkElement = listing.querySelector('a.sc-iGgWBj.hCbfch.listing-name.selling-listing');
         const listingUrl = linkElement ? 'https://traderie.com' + linkElement.getAttribute('href') : null;
 
-        // Make sure the listing actually has a price attached
-        const priceLine = listing.querySelector('.price-line');
-        if (!priceLine) return;
-
-        let items = [];
-
-        // Sequentially scan the entire listing purely based on visual text order
-        function walkDOM(node) {
-          if (!node) return;
-          for (let i = 0; i < node.childNodes.length; i++) {
-            let child = node.childNodes[i];
-            
-            if (child.nodeType === 3) { // It's a raw Text Node
-              // Only split into a new option if we hit an explicit "OR" text separator
-              if (/\bOR\b/i.test(child.textContent)) {
-                items.push("OR");
-              }
-            } else if (child.nodeType === 1) { // It's an HTML Element
-              // If it's a link and it looks like a rune badge, save the rune
-              if (child.tagName === 'A' && runeRegex.test(child.textContent.trim())) {
-                items.push(child.textContent.trim());
-              } else {
-                // Otherwise, keep searching deeper inside this element
-                walkDOM(child);
-              }
+        // --- Extract bulk quantity prefix safely ---
+        let soldItemPrefix = "";
+        if (linkElement) {
+          const rawTitle = linkElement.textContent.trim();
+          // Checks if the listing title begins with a quantity (e.g., "15 X Madawc's Ire")
+          const qtyMatch = rawTitle.match(/^(\d+)\s*X\s+(.+)/i);
+          if (qtyMatch) {
+            const qty = parseInt(qtyMatch[1], 10);
+            if (qty > 1) {
+              let cleanName = qtyMatch[2];
+              // Strip out Traderie's extra injected listing garbage text and game mod tags
+              cleanName = cleanName.replace(/(?:Standing|Stock)\s*Listing.*/i, '');
+              cleanName = cleanName.replace(/reign of the warlock.*/i, '');
+              cleanName = cleanName.replace(/diablo 2 resurrected.*/i, '');
+              cleanName = cleanName.replace(/•.*/, '');
+              cleanName = cleanName.trim();
+              
+              soldItemPrefix = `${qty} X ${cleanName} : `;
             }
           }
         }
 
-        walkDOM(listing);
+        // Make sure the listing actually has a price attached
+        const priceLines = Array.from(listing.querySelectorAll('.price-line'));
+        if (priceLines.length === 0) return;
+
+        let items = [];
+
+        // Scan purely inside the price boxes
+        priceLines.forEach((priceLine, index) => {
+          // If Traderie uses multiple separate price-lines, treat the gap between them as an OR alternative
+          if (index > 0 && items.length > 0 && items[items.length - 1] !== "OR") {
+            items.push("OR");
+          }
+
+          function walkDOM(node) {
+            if (!node) return;
+            for (let i = 0; i < node.childNodes.length; i++) {
+              let child = node.childNodes[i];
+              
+              if (child.nodeType === 3) { // It's a raw Text Node
+                // Only split into a new option if we hit an explicit "OR" text separator inside the box
+                if (/\bOR\b/i.test(child.textContent)) {
+                  items.push("OR");
+                }
+              } else if (child.nodeType === 1) { // It's an HTML Element
+                // If it's a link, check if it contains a valid currency pattern
+                if (child.tagName === 'A') {
+                  const textContent = child.textContent.trim();
+                  const match = textContent.match(itemRegex);
+                  
+                  if (match) {
+                    // Pull ONLY the quantity and item name, ignoring junk text
+                    const quantity = match[1];
+                    const cleanName = normalizeItemName(match[2]);
+                    
+                    // Check if the item is a rune so we can cleanly append the word "Rune" to the string
+                    const isRune = /^(Zod|Cham|Jah|Ber|Sur|Lo|Ohm|Vex|Gul|Ist|Mal|Um|Pul|Lem|Fal|Ko|Lum|Io|Hel|Dol|Shael|Sol|Amn|Thul|Ort|Ral|Tal|Ith|Eth|Nef|Tir|Eld|El)$/i.test(match[2]);
+                    
+                    items.push(`${quantity} X ${cleanName}${isRune ? ' Rune' : ''}`);
+                  } else {
+                    walkDOM(child);
+                  }
+                } else {
+                  // Otherwise, keep searching deeper inside this element
+                  walkDOM(child);
+                }
+              }
+            }
+          }
+
+          // STRICTLY execute walker on the priceLine, bypassing the main item title
+          walkDOM(priceLine); 
+        });
 
         let priceOptions = [];
         let currentGroup = [];
@@ -66,7 +142,7 @@
               currentGroup = []; // Start a new alternative path
             }
           } else {
-            currentGroup.push(item); // Bundle adjacent runes together
+            currentGroup.push(item); // Bundle adjacent currency tokens together
           }
         });
         
@@ -78,7 +154,7 @@
         if (priceOptions.length === 0) return;
 
         const structuredPriceOptions = [];
-        const uniqueRunesInListing = new Set();
+        const uniqueItemsInListing = new Set();
 
         // Calculate values for each bundled package block
         priceOptions.forEach(groupArr => {
@@ -87,12 +163,13 @@
           groupArr.forEach(priceStr => {
             groupSumValue += parsePrice(priceStr);
             
-            const match = priceStr.match(runeRegex);
-            const rune = match && match[2];
-            if (rune) {
-              const normalizedRune = rune.charAt(0).toUpperCase() + rune.slice(1).toLowerCase();
-              if (runeValues[normalizedRune]) {
-                uniqueRunesInListing.add(normalizedRune);
+            const match = priceStr.match(itemRegex);
+            const itemMatch = match && match[2];
+            
+            if (itemMatch) {
+              const normalizedItem = normalizeItemName(itemMatch);
+              if (itemValues[normalizedItem]) {
+                uniqueItemsInListing.add(normalizedItem);
               }
             }
           });
@@ -110,14 +187,17 @@
         // Rank the listing based on its cheapest available option
         const lowestOptionPrice = Math.min(...structuredPriceOptions.map(o => o.value));
         const fullDisplayPriceString = structuredPriceOptions.map(o => o.displayStr).join(' OR ');
+        
+        // Construct the final string by appending the bulk item prefix if it exists
+        const finalDisplayPriceString = soldItemPrefix + fullDisplayPriceString;
 
-        // Push data to all active category filters found inside the listing row
-        uniqueRunesInListing.forEach(rune => {
-          if (!runeCounts[rune]) runeCounts[rune] = [];
-          runeCounts[rune].push({ 
+        // Push data to all active category filters found inside the price row
+        uniqueItemsInListing.forEach(item => {
+          if (!itemCounts[item]) itemCounts[item] = [];
+          itemCounts[item].push({ 
             url: listingUrl, 
             price: lowestOptionPrice, 
-            displayPrice: fullDisplayPriceString 
+            displayPrice: finalDisplayPriceString 
           });
         });
 
@@ -126,17 +206,18 @@
       }
     });
 
-    return runeCounts;
+    return itemCounts;
   }
 
-  // Function to calculate numeric weight valuations for all runes
+  // Function to calculate numeric weight valuations for all currencies
   function parsePrice(price) {
-    const match = price.match(runeRegex);
+    const match = price.match(itemRegex);
     if (match) {
       const quantity = parseInt(match[1], 10);
-      const runeName = match[2].charAt(0).toUpperCase() + match[2].slice(1).toLowerCase();
+      const itemName = normalizeItemName(match[2]);
       
-      switch (runeName) {
+      switch (itemName) {
+        // High to Low Runes
         case 'Zod': return quantity * 160;
         case 'Cham': return quantity * 140;
         case 'Jah': return quantity * 150;
@@ -170,6 +251,18 @@
         case 'Tir': return quantity * 0.4;
         case 'Eld': return quantity * 0.2;
         case 'El': return quantity * 0.1;
+        // Miscellaneous Keys and Gems
+        case 'Worusk\'s End': return quantity * 0.09;
+        case 'Bul-Kathos\' Nightmare': return quantity * 0.08;
+        case 'Madawc\'s Ire': return quantity * 0.07;
+        case 'Korlic\'s Pain': return quantity * 0.06;
+        case 'Talic\'s Anguish': return quantity * 0.05;
+        case 'Random Minor Key': return quantity * 0.04;
+        case 'Key Of Destruction': return quantity * 0.03;
+        case 'Key Of Hate': return quantity * 0.02;
+        case 'Key Of Terror': return quantity * 0.015;
+        case 'Perfect Amethyst': return quantity * 0.01;
+        case 'Random Gems': return quantity * 0.005;
         default: return 0;
       }
     }
@@ -178,11 +271,10 @@
 
   // Create the container to display the sorted listings
   function createListingContainer() {
-    // Safely delete older references to dodge duplicate layout stacks
     const oldContainer = document.querySelector('.d2r-sorted-listings-panel');
     if (oldContainer) oldContainer.remove();
 
-    const runeCounts = getSortedListings();
+    const itemCounts = getSortedListings();
 
     const container = document.createElement('div');
     container.className = 'd2r-sorted-listings-panel'; 
@@ -229,41 +321,41 @@
     });
     container.appendChild(refreshButton);
 
-    // Dynamically render menu options from highest available tier rune down to lowest
-    const sortedRuneKeys = Object.keys(runeValues).sort((a, b) => runeValues[b] - runeValues[a]);
+    // Dynamically render menu options from highest available tier down to lowest
+    const sortedItemKeys = Object.keys(itemValues).sort((a, b) => itemValues[b] - itemValues[a]);
 
-    sortedRuneKeys.forEach(rune => {
-      if (runeCounts[rune] && runeCounts[rune].length > 0) {  
-        const runeButton = document.createElement('button');
-        runeButton.textContent = `${rune} (${runeCounts[rune].length})`;
-        runeButton.style.backgroundColor = '#58a6ff';
-        runeButton.style.color = '#fff';
-        runeButton.style.padding = '8px';
-        runeButton.style.marginBottom = '10px';
-        runeButton.style.border = 'none';
-        runeButton.style.cursor = 'pointer';
-        runeButton.style.borderRadius = '5px';
-        runeButton.style.width = '100%';  
-        runeButton.style.display = 'block'; 
-        runeButton.style.boxSizing = 'border-box';
-        runeButton.addEventListener('click', function() {
-          displayFilteredListings(rune);
+    sortedItemKeys.forEach(item => {
+      if (itemCounts[item] && itemCounts[item].length > 0) {  
+        const itemButton = document.createElement('button');
+        itemButton.textContent = `${item} (${itemCounts[item].length})`;
+        itemButton.style.backgroundColor = '#58a6ff';
+        itemButton.style.color = '#fff';
+        itemButton.style.padding = '8px';
+        itemButton.style.marginBottom = '10px';
+        itemButton.style.border = 'none';
+        itemButton.style.cursor = 'pointer';
+        itemButton.style.borderRadius = '5px';
+        itemButton.style.width = '100%';  
+        itemButton.style.display = 'block'; 
+        itemButton.style.boxSizing = 'border-box';
+        itemButton.addEventListener('click', function() {
+          displayFilteredListings(item);
         });
-        container.appendChild(runeButton);
+        container.appendChild(itemButton);
       }
     });
 
     document.body.appendChild(container);
   }
 
-  // Display filtered listings based on the selected rune
-  function displayFilteredListings(rune) {
+  // Display filtered listings based on the selected item
+  function displayFilteredListings(item) {
     const container = document.querySelector('.d2r-sorted-listings-panel');
     if (!container) return;
     container.innerHTML = '';  
 
     const title = document.createElement('h3');
-    title.textContent = `Listings for ${rune}`;
+    title.textContent = `Listings for ${item}`;
     title.style.fontSize = '16px';
     title.style.marginBottom = '10px';
     title.style.textAlign = 'center';
@@ -286,7 +378,7 @@
     });
     container.appendChild(refreshButton);
 
-    const filteredListings = getSortedListings()[rune] || [];
+    const filteredListings = getSortedListings()[item] || [];
     filteredListings.sort((a, b) => a.price - b.price); 
 
     filteredListings.forEach(listing => {
@@ -299,6 +391,6 @@
     });
   }
 
-  // Create the listing container and display the listings
+  // Run the initializer sequence
   createListingContainer();
 })();
