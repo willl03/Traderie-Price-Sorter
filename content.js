@@ -2,81 +2,174 @@
   // Select the divs containing price and listing data
   const listingSelector = '.listing-product-info';
 
-  // Define the runes from Um and above, with each rune's value representing its hierarchy
+  // Define every single rune in Diablo 2 with hierarchical weight values
   const runeValues = {
-    Um: 16,
-    Mal: 17,
-    Ist: 18,
-    Gul: 19,
-    Vex: 20,
-    Ohm: 21,
-    Sur: 22,
-    Ber: 23,
-    Jah: 24,
-    Cham: 25,
-    Zod: 26
+    El: 1, Eld: 2, Tir: 3, Nef: 4, Eth: 5, Ith: 6, Tal: 7, Ral: 8, Ort: 9, Thul: 10,
+    Amn: 11, Sol: 12, Shael: 13, Dol: 14, Hel: 15, Io: 16, Lum: 17, Ko: 18, Fal: 19,
+    Lem: 20, Pul: 21, Um: 22, Mal: 23, Ist: 24, Gul: 25, Vex: 26, Ohm: 27, Lo: 28,
+    Sur: 29, Ber: 30, Jah: 31, Cham: 32, Zod: 33
   };
+
+  // Master regular expression pattern matching all 33 runes case-insensitively
+  const runeRegex = /(\d+)\s*X\s*(Zod|Cham|Jah|Ber|Sur|Lo|Ohm|Vex|Gul|Ist|Mal|Um|Pul|Lem|Fal|Ko|Lum|Io|Hel|Dol|Shael|Sol|Amn|Thul|Ort|Ral|Tal|Ith|Eth|Nef|Tir|Eld|El)\s*Rune/i;
 
   // Create a function to get the sorted listings
   function getSortedListings() {
     const listings = Array.from(document.querySelectorAll(listingSelector));
     const runeCounts = {};
 
-    // Loop through each listing
     listings.forEach(listing => {
-      // Extract the link for the current listing
-      const linkElement = listing.querySelector('a.sc-iGgWBj.hCbfch.listing-name.selling-listing');
-      const listingUrl = linkElement ? 'https://traderie.com' + linkElement.getAttribute('href') : null;
+      try {
+        // Extract the link for the current listing
+        const linkElement = listing.querySelector('a.sc-iGgWBj.hCbfch.listing-name.selling-listing');
+        const listingUrl = linkElement ? 'https://traderie.com' + linkElement.getAttribute('href') : null;
 
-      // Extract the prices
-      const priceElements = Array.from(listing.querySelectorAll('.price-line a.sc-iGgWBj.hCbfch'));
-      const prices = priceElements
-        .map(price => price.textContent.trim())
-        .filter(price => /(\d+)\s*X\s*(Jah|Ber|Ist|Gul|Ohm|Vex|Mal|Pul|Lem|Fal|Um|Ko|Lo|Dol|Sol|Ort|Ral|Tal|Ith|Nef|Tir|Eld|El)\s*Rune/.test(price)); // Only keep valid prices
+        // Make sure the listing actually has a price attached
+        const priceLine = listing.querySelector('.price-line');
+        if (!priceLine) return;
 
-      // For each valid price, increment the count for the corresponding rune
-      prices.forEach(price => {
-        const match = price.match(/(\d+)\s*X\s*(Jah|Ber|Ist|Gul|Ohm|Vex|Mal|Pul|Lem|Fal|Um|Ko|Lo|Dol|Sol|Ort|Ral|Tal|Ith|Nef|Tir|Eld|El)\s*Rune/);
-        const rune = match && match[2];
-        if (rune && runeValues[rune]) {
-          if (!runeCounts[rune]) runeCounts[rune] = [];
-          runeCounts[rune].push({ url: listingUrl, price: parsePrice(price), prices: prices });
+        let items = [];
+
+        // Sequentially scan the entire listing purely based on visual text order
+        function walkDOM(node) {
+          if (!node) return;
+          for (let i = 0; i < node.childNodes.length; i++) {
+            let child = node.childNodes[i];
+            
+            if (child.nodeType === 3) { // It's a raw Text Node
+              // Only split into a new option if we hit an explicit "OR" text separator
+              if (/\bOR\b/i.test(child.textContent)) {
+                items.push("OR");
+              }
+            } else if (child.nodeType === 1) { // It's an HTML Element
+              // If it's a link and it looks like a rune badge, save the rune
+              if (child.tagName === 'A' && runeRegex.test(child.textContent.trim())) {
+                items.push(child.textContent.trim());
+              } else {
+                // Otherwise, keep searching deeper inside this element
+                walkDOM(child);
+              }
+            }
+          }
         }
-      });
+
+        walkDOM(listing);
+
+        let priceOptions = [];
+        let currentGroup = [];
+
+        // Process the scanned items into their proper bundled groups
+        items.forEach(item => {
+          if (item === "OR") {
+            if (currentGroup.length > 0) {
+              priceOptions.push(currentGroup);
+              currentGroup = []; // Start a new alternative path
+            }
+          } else {
+            currentGroup.push(item); // Bundle adjacent runes together
+          }
+        });
+        
+        // Push the final group if it contains anything
+        if (currentGroup.length > 0) {
+          priceOptions.push(currentGroup);
+        }
+
+        if (priceOptions.length === 0) return;
+
+        const structuredPriceOptions = [];
+        const uniqueRunesInListing = new Set();
+
+        // Calculate values for each bundled package block
+        priceOptions.forEach(groupArr => {
+          let groupSumValue = 0;
+          
+          groupArr.forEach(priceStr => {
+            groupSumValue += parsePrice(priceStr);
+            
+            const match = priceStr.match(runeRegex);
+            const rune = match && match[2];
+            if (rune) {
+              const normalizedRune = rune.charAt(0).toUpperCase() + rune.slice(1).toLowerCase();
+              if (runeValues[normalizedRune]) {
+                uniqueRunesInListing.add(normalizedRune);
+              }
+            }
+          });
+
+          if (groupArr.length > 0) {
+            structuredPriceOptions.push({
+              displayStr: groupArr.join(' + '), // Packages are cleanly joined with a '+'
+              value: groupSumValue
+            });
+          }
+        });
+
+        if (structuredPriceOptions.length === 0) return;
+
+        // Rank the listing based on its cheapest available option
+        const lowestOptionPrice = Math.min(...structuredPriceOptions.map(o => o.value));
+        const fullDisplayPriceString = structuredPriceOptions.map(o => o.displayStr).join(' OR ');
+
+        // Push data to all active category filters found inside the listing row
+        uniqueRunesInListing.forEach(rune => {
+          if (!runeCounts[rune]) runeCounts[rune] = [];
+          runeCounts[rune].push({ 
+            url: listingUrl, 
+            price: lowestOptionPrice, 
+            displayPrice: fullDisplayPriceString 
+          });
+        });
+
+      } catch (err) {
+        console.error("Skipped an unparseable listing row: ", err);
+      }
     });
 
     return runeCounts;
   }
 
-  // Function to parse the price from a string like "18 X Ber Rune"
+  // Function to calculate numeric weight valuations for all runes
   function parsePrice(price) {
-    const match = price.match(/(\d+)\s*X\s*(Jah|Ber|Ist|Gul|Ohm|Vex|Mal|Pul|Lem|Fal|Um|Ko|Lo|Dol|Sol|Ort|Ral|Tal|Ith|Nef|Tir|Eld|El)\s*Rune/);
+    const match = price.match(runeRegex);
     if (match) {
       const quantity = parseInt(match[1], 10);
-      switch (match[2]) {
-        case 'Ber': return quantity * 100; 
-        case 'Ist': return quantity * 50;
+      const runeName = match[2].charAt(0).toUpperCase() + match[2].slice(1).toLowerCase();
+      
+      switch (runeName) {
+        case 'Zod': return quantity * 160;
+        case 'Cham': return quantity * 140;
         case 'Jah': return quantity * 150;
-        case 'Gul': return quantity * 70;
+        case 'Ber': return quantity * 100; 
+        case 'Sur': return quantity * 95;
+        case 'Lo': return quantity * 130; 
         case 'Ohm': return quantity * 120;
         case 'Vex': return quantity * 110;
-        case 'Mal': return quantity * 90;
+        case 'Gul': return quantity * 70;
+        case 'Ist': return quantity * 50;
+        case 'Mal': return quantity * 45;
+        case 'Um': return quantity * 40;
         case 'Pul': return quantity * 30;
         case 'Lem': return quantity * 20;
         case 'Fal': return quantity * 15;
-        case 'Um': return quantity * 10;
         case 'Ko': return quantity * 8;
-        case 'Lo': return quantity * 12;
+        case 'Lum': return quantity * 7;
+        case 'Io': return quantity * 6;
+        case 'Hel': return quantity * 5.5;
         case 'Dol': return quantity * 5;
+        case 'Shael': return quantity * 4.5;
         case 'Sol': return quantity * 4;
-        case 'Ort': return quantity * 3;
+        case 'Amn': return quantity * 3.5;
+        case 'Thul': return quantity * 3;
+        case 'Ort': return quantity * 2.5;
         case 'Ral': return quantity * 2;
-        case 'Tal': return quantity * 1;
-        case 'Ith': return quantity * 0.5;
-        case 'Nef': return quantity * 0.3;
-        case 'Tir': return quantity * 0.2;
-        case 'Eld': return quantity * 0.1;
-        case 'El': return quantity * 0.05;
+        case 'Tal': return quantity * 1.5;
+        case 'Ith': return quantity * 1;
+        case 'Eth': return quantity * 0.8;
+        case 'Nef': return quantity * 0.6;
+        case 'Tir': return quantity * 0.4;
+        case 'Eld': return quantity * 0.2;
+        case 'El': return quantity * 0.1;
         default: return 0;
       }
     }
@@ -85,53 +178,62 @@
 
   // Create the container to display the sorted listings
   function createListingContainer() {
+    // Safely delete older references to dodge duplicate layout stacks
+    const oldContainer = document.querySelector('.d2r-sorted-listings-panel');
+    if (oldContainer) oldContainer.remove();
+
     const runeCounts = getSortedListings();
 
-    // Create a container for listings
     const container = document.createElement('div');
-    container.className = 'listing-container';
+    container.className = 'd2r-sorted-listings-panel'; 
     container.style.position = 'fixed';
     container.style.top = '20px';
     container.style.right = '20px';
-    container.style.backgroundColor = '#333';  // Dark background color
-    container.style.color = '#fff';  // White text
-    container.style.border = '1px solid #444';  // Slightly lighter border
+    container.style.backgroundColor = '#333';  
+    container.style.color = '#fff';  
+    container.style.border = '1px solid #444';  
     container.style.padding = '10px';
-    container.style.zIndex = 9999;
-    container.style.maxWidth = '300px';
+    container.style.zIndex = 100000; 
+    container.style.width = '340px'; 
+    container.style.display = 'flex'; // Locked strictly into flex column stack
+    container.style.flexDirection = 'column';
+    container.style.flexWrap = 'nowrap';
     container.style.overflowY = 'auto';
     container.style.maxHeight = '80vh';
     container.style.boxShadow = '0 4px 6px rgba(0, 0, 0, 0.2)';
-    container.style.borderRadius = '8px';  // Rounded corners for a smoother look
+    container.style.borderRadius = '8px';  
+    container.style.boxSizing = 'border-box';
+    container.style.fontFamily = 'sans-serif';
 
-    // Title
     const title = document.createElement('h3');
     title.textContent = `Sorted Listings by Price`;
     title.style.fontSize = '16px';
     title.style.marginBottom = '10px';
+    title.style.textAlign = 'center';
     container.appendChild(title);
 
-    // Refresh Button
     const refreshButton = document.createElement('button');
     refreshButton.textContent = 'Refresh Listings';
-    refreshButton.style.backgroundColor = '#4CAF50';  // Green color for refresh
+    refreshButton.style.backgroundColor = '#4CAF50';  
     refreshButton.style.color = '#fff';
     refreshButton.style.padding = '8px';
     refreshButton.style.border = 'none';
     refreshButton.style.borderRadius = '5px';
     refreshButton.style.cursor = 'pointer';
     refreshButton.style.marginBottom = '10px';
-    refreshButton.style.width = '100%';  // Make the button span the full width
+    refreshButton.style.width = '100%';  
+    refreshButton.style.display = 'block';
     refreshButton.addEventListener('click', function() {
-      // Remove the current container and recreate it
-      document.body.removeChild(container);
-      createListingContainer();  // Re-run the script to reload and display sorted listings
+      container.remove();
+      createListingContainer();  
     });
     container.appendChild(refreshButton);
 
-    // Create buttons for each rune with the count of listings
-    Object.keys(runeValues).forEach(rune => {
-      if (runeCounts[rune] && runeCounts[rune].length > 0) {  // Only show buttons for runes that have listings
+    // Dynamically render menu options from highest available tier rune down to lowest
+    const sortedRuneKeys = Object.keys(runeValues).sort((a, b) => runeValues[b] - runeValues[a]);
+
+    sortedRuneKeys.forEach(rune => {
+      if (runeCounts[rune] && runeCounts[rune].length > 0) {  
         const runeButton = document.createElement('button');
         runeButton.textContent = `${rune} (${runeCounts[rune].length})`;
         runeButton.style.backgroundColor = '#58a6ff';
@@ -141,56 +243,58 @@
         runeButton.style.border = 'none';
         runeButton.style.cursor = 'pointer';
         runeButton.style.borderRadius = '5px';
-        runeButton.style.width = '100%';  // Make the button span the full width
+        runeButton.style.width = '100%';  
+        runeButton.style.display = 'block'; 
+        runeButton.style.boxSizing = 'border-box';
         runeButton.addEventListener('click', function() {
-          // Clear the current listings and display only the selected rune's listings
           displayFilteredListings(rune);
         });
         container.appendChild(runeButton);
       }
     });
 
-    // Append the container to the body of the webpage
     document.body.appendChild(container);
   }
 
   // Display filtered listings based on the selected rune
   function displayFilteredListings(rune) {
-    const container = document.querySelector('.listing-container');
-    container.innerHTML = '';  // Clear the current container
+    const container = document.querySelector('.d2r-sorted-listings-panel');
+    if (!container) return;
+    container.innerHTML = '';  
 
     const title = document.createElement('h3');
     title.textContent = `Listings for ${rune}`;
     title.style.fontSize = '16px';
     title.style.marginBottom = '10px';
+    title.style.textAlign = 'center';
     container.appendChild(title);
 
-    // Refresh Button
     const refreshButton = document.createElement('button');
     refreshButton.textContent = 'Back to All Listings';
-    refreshButton.style.backgroundColor = '#4CAF50';  // Green color for refresh
+    refreshButton.style.backgroundColor = '#4CAF50';  
     refreshButton.style.color = '#fff';
     refreshButton.style.padding = '8px';
     refreshButton.style.border = 'none';
     refreshButton.style.borderRadius = '5px';
     refreshButton.style.cursor = 'pointer';
     refreshButton.style.marginBottom = '10px';
-    refreshButton.style.width = '100%';  // Make the button span the full width
+    refreshButton.style.width = '100%';  
+    refreshButton.style.display = 'block';
     refreshButton.addEventListener('click', function() {
-      // Remove the current container and recreate it with all listings
-      document.body.removeChild(container);
-      createListingContainer();  // Re-run the script to display all listings again
+      container.remove();
+      createListingContainer();  
     });
     container.appendChild(refreshButton);
 
-    // Get listings for the selected rune and display them, sorted by price
-    const filteredListings = getSortedListings()[rune];
-    filteredListings.sort((a, b) => a.price - b.price); // Sort by price (lowest to highest)
+    const filteredListings = getSortedListings()[rune] || [];
+    filteredListings.sort((a, b) => a.price - b.price); 
 
     filteredListings.forEach(listing => {
       const listingElement = document.createElement('p');
-      listingElement.innerHTML = `<a href="${listing.url}" target="_blank" style="color: #58a6ff; text-decoration: none;">${listing.url}</a> - ${listing.prices.join(' OR ')}`;
-      listingElement.style.marginBottom = '8px';
+      listingElement.style.margin = '0 0 8px 0';
+      listingElement.style.fontSize = '13px';
+      listingElement.style.display = 'block';
+      listingElement.innerHTML = `<a href="${listing.url}" target="_blank" style="color: #58a6ff; text-decoration: none; font-weight: bold;">[Link]</a> - ${listing.displayPrice}`;
       container.appendChild(listingElement);
     });
   }
