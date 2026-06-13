@@ -7,15 +7,17 @@
     // Custom Currencies (Lowest Priority)
     'Random Gems': 0.01,
     'Perfect Amethyst': 0.02,
+    'Random Minor Key': 0.025, // Shifted below specific keys
     'Key Of Terror': 0.03,
     'Key Of Hate': 0.04,
     'Key Of Destruction': 0.05,
-    'Random Minor Key': 0.06,
+    '3x3 Key Set': 0.06,
     'Talic\'s Anguish': 0.07,
     'Korlic\'s Pain': 0.08,
     'Madawc\'s Ire': 0.09,
     'Bul-Kathos\' Nightmare': 0.10,
     'Worusk\'s End': 0.11,
+    'Statue Set': 0.12,   
     // Runes
     El: 1, Eld: 2, Tir: 3, Nef: 4, Eth: 5, Ith: 6, Tal: 7, Ral: 8, Ort: 9, Thul: 10,
     Amn: 11, Sol: 12, Shael: 13, Dol: 14, Hel: 15, Io: 16, Lum: 17, Ko: 18, Fal: 19,
@@ -23,8 +25,8 @@
     Sur: 29, Ber: 30, Jah: 31, Cham: 32, Zod: 33
   };
 
-  // Master regular expression pattern matching all runes, keys, and gems case-insensitively
-  const itemRegex = /(\d+)\s*X\s*(Zod|Cham|Jah|Ber|Sur|Lo|Ohm|Vex|Gul|Ist|Mal|Um|Pul|Lem|Fal|Ko|Lum|Io|Hel|Dol|Shael|Sol|Amn|Thul|Ort|Ral|Tal|Ith|Eth|Nef|Tir|Eld|El|Worusk\'s\s*End|Bul-Kathos\'\s*Nightmare|Madawc\'s\s*Ire|Korlic\'s\s*Pain|Talic\'s\s*Anguish|Random\s*Minor\s*Keys?|Key\s*Of\s*Destructions?|Key\s*Of\s*Hates?|Key\s*Of\s*Terrors?|Perfect\s*Amethysts?|Random\s*Gems?)(?:\s*Rune)?/i;
+  // Master regular expression pattern matching all runes, keys, sets, and gems case-insensitively
+  const itemRegex = /(\d+)\s*X\s*(Zod|Cham|Jah|Ber|Sur|Lo|Ohm|Vex|Gul|Ist|Mal|Um|Pul|Lem|Fal|Ko|Lum|Io|Hel|Dol|Shael|Sol|Amn|Thul|Ort|Ral|Tal|Ith|Eth|Nef|Tir|Eld|El|Statue\s*Sets?|Worusk\'s\s*End|Bul-Kathos\'\s*Nightmare|Madawc\'s\s*Ire|Korlic\'s\s*Pain|Talic\'s\s*Anguish|3x3\s*Key\s*Sets?|Random\s*Minor\s*Keys?|Key\s*Of\s*Destructions?|Key\s*Of\s*Hates?|Key\s*Of\s*Terrors?|Perfect\s*Amethysts?|Random\s*Gems?)\b(?:\s*Rune)?/i;
 
   // Smart string normalizer to map HTML text perfectly to our dictionary keys
   function normalizeItemName(rawName) {
@@ -35,11 +37,13 @@
     if (lower.includes('key of hate')) return 'Key Of Hate';
     if (lower.includes('key of destruction')) return 'Key Of Destruction';
     if (lower.includes('random minor key')) return 'Random Minor Key';
+    if (lower.includes('3x3 key set')) return '3x3 Key Set';
     if (lower.includes('talic')) return "Talic's Anguish";
     if (lower.includes('korlic')) return "Korlic's Pain";
     if (lower.includes('madawc')) return "Madawc's Ire";
     if (lower.includes('bul-kathos')) return "Bul-Kathos' Nightmare";
     if (lower.includes('worusk')) return "Worusk's End";
+    if (lower.includes('statue set')) return 'Statue Set';
     
     // Fallback normalization for standard runes
     return lower.charAt(0).toUpperCase() + lower.slice(1);
@@ -85,14 +89,13 @@
 
         let tokens = [];
 
-        // RESTORED: Scan the entire listing sequentially to preserve text boundaries 
-        // accurately recognizing "OR" text nodes vs adjacent package runes.
+        // Scan the entire listing sequentially to preserve text boundaries 
         function walkDOM(node) {
           if (!node) return;
           for (let i = 0; i < node.childNodes.length; i++) {
             let child = node.childNodes[i];
             
-            // CRITICAL FIX: Skip the item title element entirely so it's not mixed into the price!
+            // Skip the item title element entirely so it's not mixed into the price
             if (child === linkElement) continue;
             if (child.nodeType === 1 && child.classList && child.classList.contains('listing-name')) continue;
             
@@ -241,16 +244,17 @@
         case 'Tir': return quantity * 0.4;
         case 'Eld': return quantity * 0.2;
         case 'El': return quantity * 0.1;
-        // Miscellaneous Keys and Gems
+        // Miscellaneous Sets, Keys and Gems
+        case 'Statue Set': return quantity * 0.12;
         case 'Worusk\'s End': return quantity * 0.09;
         case 'Bul-Kathos\' Nightmare': return quantity * 0.08;
         case 'Madawc\'s Ire': return quantity * 0.07;
         case 'Korlic\'s Pain': return quantity * 0.06;
-        case 'Talic\'s Anguish': return quantity * 0.05;
-        case 'Random Minor Key': return quantity * 0.04;
+        case '3x3 Key Set': return quantity * 0.065;
         case 'Key Of Destruction': return quantity * 0.03;
         case 'Key Of Hate': return quantity * 0.02;
         case 'Key Of Terror': return quantity * 0.015;
+        case 'Random Minor Key': return quantity * 0.012; // Lowered below specific keys
         case 'Perfect Amethyst': return quantity * 0.01;
         case 'Random Gems': return quantity * 0.005;
         default: return 0;
@@ -269,7 +273,7 @@
     const container = document.createElement('div');
     container.className = 'd2r-sorted-listings-panel'; 
     container.style.position = 'fixed';
-    container.style.top = '20px';
+    container.style.top = '20px'; 
     container.style.right = '20px';
     container.style.backgroundColor = '#333';  
     container.style.color = '#fff';  
